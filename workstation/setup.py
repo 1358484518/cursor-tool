@@ -169,7 +169,7 @@ def run_setup() -> int:
         from workstation.start import run_start
 
         return run_start()
-    later = "启动连接.bat" if os.name == "nt" else "bash 启动连接.sh"
+    later = "connect.bat / launch.py" if os.name == "nt" else "bash connect.sh 或 python3 launch.py"
     _print(f"以后请运行 {later}")
     return 0
 

@@ -15,7 +15,7 @@ echo.
 
 call :find_python
 if errorlevel 1 (
-  echo 找不到 Python 3.10+。请先双击 一键配置.bat
+  echo 找不到 Python 3.10+。请先双击 setup.bat
   echo.
   pause
   exit /b 1

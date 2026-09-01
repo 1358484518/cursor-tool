@@ -9,8 +9,8 @@
 Win / Linux 同一个入口（标准库 **tkinter**，不再写两套脚本）：
 
 ```bash
-python 启动工位.py          # Windows 也可双击 启动工位.py / 启动工位.bat
-python3 启动工位.py         # Ubuntu
+python launch.py          # Windows 也可双击 launch.py / launch.bat
+python3 launch.py         # Ubuntu
 # 或
 python3 -m workstation
 ```
@@ -71,9 +71,9 @@ agent worker start --name "$(hostname)" --worker-dir "$PWD"
 ```bash
 git clone https://github.com/1358484518/cursor-tool
 cd cursor-tool
-bash 一键配置.sh
+bash setup.sh
 # 以后每次：
-bash 启动连接.sh
+bash connect.sh
 ```
 
 `mcp.off-the-shelf.json` 里的启动方式与上游文档一致：
@@ -96,17 +96,17 @@ bash 启动连接.sh
 
 ## Windows 怎么用
 
-1. 把本仓库放到电脑上，双击 **`一键配置.bat`**。
+1. 把本仓库放到电脑上，双击 **`setup.bat`**。
 2. 指定 worker 工作文件夹（`--worker-dir`）。
 3. 浏览器登录 Cursor。
-4. 以后日常双击 **`启动连接.bat`**，窗口不要关。
+4. 以后日常双击 **`connect.bat`**（或用 **`launch.py`**），窗口不要关。
 5. 打开 [cursor.com/agents](https://cursor.com/agents)，选这台工位再发任务。
 
 ## 你要的能力
 
 | 能力 | 怎么实现 |
 | --- | --- |
-| 连上 Cursor worker | `python 启动工位.py`（官方 `agent worker start`） |
+| 连上 Cursor worker | `python launch.py`（官方 `agent worker start`） |
 | 工作区限定一个文件夹 | 官方 `--worker-dir` |
 | 编译器 / 烧录器可用 | worker 终端保留系统 PATH |
 | 串口 / 拍照 | Ubuntu：现成 uvx MCP；Windows：本仓库 FastMCP |
@@ -174,9 +174,9 @@ Windows 上一键配置仍启动本仓库 FastMCP（工具名见下表），避�
 
 ```
 cursor-tool/
-  启动工位.py / 启动工位.bat   跨平台 GUI（推荐）
-  一键配置.sh / 启动连接.sh    Ubuntu 命令行
-  一键配置.bat / 启动连接.bat  Windows 命令行
+  launch.py / launch.bat     跨平台 GUI（推荐）
+  setup.sh / connect.sh      Ubuntu 命令行
+  setup.bat / connect.bat    Windows 命令行
   mcp.off-the-shelf.json      现成 mcp-serial / framegrab
   workstation/gui.py          tkinter 界面
   workstation/launcher.py     组装官方 worker 命令
@@ -187,7 +187,7 @@ cursor-tool/
 Ubuntu 直接用官方命令即可（见上文）。向导封装：
 
 ```bash
-python3 启动工位.py
+python3 launch.py
 python3 -m workstation        # 默认打开 GUI
 python3 -m workstation setup  # 命令行向导
 python3 -m workstation start  # 无界面启动 worker
@@ -196,6 +196,7 @@ python3 -m workstation start  # 无界面启动 worker
 Windows：
 
 ```bat
+python launch.py
 python -m workstation setup
 python -m workstation start
 python -m workstation mcp

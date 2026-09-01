@@ -20,7 +20,7 @@ def run_start() -> int:
     cfg = load_config()
     workspace_raw = str(cfg.get("workspace") or "")
     if not workspace_raw:
-        hint = "启动工位.py 或 一键配置.bat" if os.name == "nt" else "python3 启动工位.py"
+        hint = "launch.py / setup.bat" if os.name == "nt" else "python3 launch.py"
         _print(f"还没有配置工作文件夹。请先运行 {hint}")
         return 1
     try:
