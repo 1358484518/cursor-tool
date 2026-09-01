@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from workstation.mcp_config import mcp_server_config
+from workstation.mcp_config import mcp_server_config, off_the_shelf_servers, upsert_mcp
 from workstation.mcp_server import SERVER_INSTRUCTIONS, mcp
 
 
@@ -82,6 +82,23 @@ class McpProtocolTests(unittest.TestCase):
         cfg = mcp_server_config("/usr/bin/python3", "/tmp/ws")
         self.assertEqual(cfg["args"], ["-m", "workstation.mcp_server"])
         self.assertEqual(cfg["env"]["WORKSTATION_ROOT"], "/tmp/ws")
+
+    def test_off_the_shelf_servers_match_vendored_json(self) -> None:
+        servers = off_the_shelf_servers()
+        self.assertEqual(set(servers), {"serial", "framegrab"})
+        self.assertEqual(servers["serial"]["command"], "uvx")
+        self.assertIn("mcp-serial", servers["serial"]["args"])
+        self.assertEqual(servers["framegrab"]["args"], ["framegrab-mcp-server"])
+
+    def test_linux_mcp_json_uses_off_the_shelf(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "mcp.json"
+        upsert_mcp(path, "/usr/bin/python3", str(Path(tmp.name)))
+        data = (path.read_text(encoding="utf-8"))
+        self.assertIn("mcp-serial", data)
+        self.assertIn("framegrab-mcp-server", data)
+        self.assertNotIn("workstation.mcp_server", data)
 
     def test_take_photo_saves_and_returns_image(self) -> None:
         tmp = tempfile.TemporaryDirectory()

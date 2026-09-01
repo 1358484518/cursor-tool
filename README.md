@@ -1,61 +1,130 @@
-# Cursor-tool：Windows 工位一键配置
+# Cursor-tool：本机工位一键配置（Windows / Ubuntu）
 
 仓库：https://github.com/1358484518/cursor-tool
 
-在 Windows 电脑上双击 **`一键配置.bat`**，把这台机器登记为 Cursor Cloud Agent 的 [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines) worker。之后云端任务在你指定的文件夹里改代码、跑终端，并可以调用本机串口和摄像头。
+把你桌上的电脑登记为 Cursor Cloud Agent 的 [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines) worker。云端任务在你指定的文件夹里改代码、跑终端，并可调用本机串口和摄像头。
+
+**Ubuntu 不必用本仓库自研 MCP。** 文件和终端用官方 `agent worker`；串口用现成的 [mcp-serial](https://github.com/HumbertoBernal/mcp-serial)；拍照用现成的 [framegrab-mcp-server](https://pypi.org/project/framegrab-mcp-server/)。本仓库只帮你写好 `mcp.json` 并启动官方 CLI。
 
 ## 这个套件有什么用
 
-需求其实很普通：**让云端 Agent 用你桌上那台已经装好 Keil / J-Link / 串口的 Windows 电脑**。这类能力官方和开源里都有现成做法，本仓库按它们来接，而不是再造一套文件协议。
+需求其实很普通：**让云端 Agent 用你桌上已经装好工具链、插着板子的那台电脑**。
 
 | 你要的能力 | 用现成的什么 |
 | --- | --- |
-| 双击连上云端 Agent，在指定文件夹干活 | Cursor 官方 My Machines：`agent worker start --worker-dir …`（文件编辑、终端、浏览器都是 worker 自带的） |
-| 编译器 / 烧录器 | worker 的终端 + 系统 PATH（Keil、IAR、`arm-none-eabi-gcc`、STM32CubeProgrammer、J-Link） |
-| 串口调试、复位抓 boot log | 对齐 [mcp-serial](https://github.com/HumbertoBernal/mcp-serial) 的 `list_ports` / `query` / `reset_device` |
-| 拍板子核对 LED / 屏幕 | 对齐 [videocapture-mcp](https://github.com/13rac1/videocapture-mcp) 的 `quick_capture`（开摄像头 → 一帧 → 关闭） |
-| MCP 协议本身 | 官方 [Python MCP SDK / FastMCP](https://github.com/modelcontextprotocol/python-sdk)，不再手写 JSON-RPC |
+| 连上云端 Agent，在指定文件夹干活 | Cursor 官方 My Machines：`agent worker start --worker-dir …` |
+| 编译器 / 烧录器 | worker 的终端 + 系统 PATH |
+| 串口（Linux） | 现成 `uvx … mcp-serial` |
+| 摄像头（Linux） | 现成 `uvx framegrab-mcp-server` |
+| 串口 + 拍照（Windows 一键） | 本仓库 FastMCP（对齐上述两个项目，避免再装 Node/uv） |
 
-没有它时，Cloud Agent 跑在云端虚拟机里，碰不到你桌上的工具链、COM 口和摄像头。有了它之后，人坐在板子旁边，Agent 在云端改代码、编译、烧录、看串口、拍照核对现象。
+## Ubuntu 怎么用（推荐：直接用官方命令）
+
+在工程目录里执行（与[官方文档](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)相同）：
+
+```bash
+# 1. 官方 Cursor CLI
+curl https://cursor.com/install -fsS | bash
+export PATH="$HOME/.local/bin:$PATH"
+agent login
+
+# 2. 现成 MCP 运行器
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+# 3. 把仓库里的现成配置拷到 Cursor（或手动合并）
+mkdir -p ~/.cursor
+cp mcp.off-the-shelf.json ~/.cursor/mcp.json
+
+# 4. 串口权限（USB 转串口）
+sudo usermod -aG dialout "$USER"   # 然后注销再登录
+
+# 5. 启动 worker（窗口不要关）
+agent worker start --name "$(hostname)" --worker-dir "$PWD"
+```
+
+然后打开 [cursor.com/agents](https://cursor.com/agents)，在环境列表里选这台机器。
+
+也可以在本仓库目录运行封装脚本（同样只调官方 CLI + 现成 MCP，不装自研服务）：
+
+```bash
+git clone https://github.com/1358484518/cursor-tool
+cd cursor-tool
+bash 一键配置.sh
+# 以后每次：
+bash 启动连接.sh
+```
+
+`mcp.off-the-shelf.json` 里的启动方式与上游文档一致：
+
+```json
+{
+  "mcpServers": {
+    "serial": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/HumbertoBernal/mcp-serial", "mcp-serial"]
+    },
+    "framegrab": {
+      "command": "uvx",
+      "args": ["framegrab-mcp-server"],
+      "env": { "ENABLE_FRAMEGRAB_AUTO_DISCOVERY": "true" }
+    }
+  }
+}
+```
+
+## Windows 怎么用
+
+1. 把本仓库放到电脑上，双击 **`一键配置.bat`**。
+2. 指定 worker 工作文件夹（`--worker-dir`）。
+3. 浏览器登录 Cursor。
+4. 以后日常双击 **`启动连接.bat`**，窗口不要关。
+5. 打开 [cursor.com/agents](https://cursor.com/agents)，选这台工位再发任务。
 
 ## 你要的能力
 
 | 能力 | 怎么实现 |
 | --- | --- |
-| 双击就能连上 Cursor worker | `一键配置.bat` 安装官方 CLI、登录；`启动连接.bat` 执行 `agent worker start` |
-| 工作区限定一个文件夹 | 官方 `--worker-dir`（不是自研文件 MCP） |
+| 连上 Cursor worker | 官方 `agent worker start`（Windows 用 bat，Ubuntu 用官方命令或 `一键配置.sh`） |
+| 工作区限定一个文件夹 | 官方 `--worker-dir` |
 | 编译器 / 烧录器可用 | worker 终端保留系统 PATH |
-| 串口 / 拍照 | 本机 stdio MCP（FastMCP），仅补充 worker 没有的硬件 |
-
-## 使用步骤
-
-1. 把本仓库放到 Windows 电脑上（克隆或下载均可）。
-2. 双击 **`一键配置.bat`**。
-3. 按提示指定 worker 工作文件夹（对应 `--worker-dir`；没有会询问是否创建）。
-4. 浏览器里登录 Cursor（和 cursor.com 同一个账号）。
-5. 配置结束会询问是否立刻启动连接；以后日常只需双击 **`启动连接.bat`**，并保持窗口不要关。
-6. 打开 [https://cursor.com/agents](https://cursor.com/agents)，在环境列表里选择这台工位，再发任务。
+| 串口 / 拍照 | Ubuntu：现成 uvx MCP；Windows：本仓库 FastMCP |
 
 ## 环境要求
 
-- Windows 10/11
+**Ubuntu / Linux**
+
+- Python 3.10+（脚本向导用；官方 worker 本身不依赖本仓库 Python 包）
+- `curl`；脚本会按官方方式安装 Cursor CLI 和 `uv`
+- 串口：用户加入 `dialout` 组
+- 工具链已在 PATH（`arm-none-eabi-gcc`、OpenOCD、`stm32flash`、J-Link 等）
+
+**Windows 10/11**
+
 - Python 3.10 或更高（没有的话，脚本会尝试用 `winget` 安装）
-- 能访问外网，以便安装 Cursor CLI：`irm 'https://cursor.com/install?win32=true' | iex`
-- 本机已安装你需要的工具链（Keil、IAR、`arm-none-eabi-gcc`、STM32CubeProgrammer、J-Link 等），并已加入 PATH
+- 安装 Cursor CLI：`irm 'https://cursor.com/install?win32=true' | iex`
+- 本机已安装 Keil、IAR、`arm-none-eabi-gcc`、STM32CubeProgrammer、J-Link 等，并已加入 PATH
 
 ## MCP 工具有什么用
 
-**文件和命令不要走这套 MCP。** 列目录、改源码、`gcc` / `STM32_Programmer_CLI` / `JLink.exe` 都用 worker 自带能力。
+**文件和命令不要走硬件 MCP。** 列目录、改源码、编译、烧录都用 worker 自带能力。
 
-本仓库只额外拉起一个 stdio MCP（`windows-workstation`），给云端 Agent 用串口和摄像头：
+Ubuntu 上本仓库**不运行**自研 `windows-workstation` 服务，只写入现成 MCP：
+
+| 来源 | 做什么 |
+| --- | --- |
+| [mcp-serial](https://github.com/HumbertoBernal/mcp-serial) | `list_ports` / `query` / `reset_device` 等串口工具 |
+| [framegrab-mcp-server](https://pypi.org/project/framegrab-mcp-server/) | 发现摄像头并 `grab_frame` |
+
+Windows 上一键配置仍启动本仓库 FastMCP（工具名见下表），避免再装 uv：
 
 | 工具 | 做什么 | 有什么用 | 参考 |
 | --- | --- | --- | --- |
-| `list_ports` | 列出 COM 口和 USB VID/PID | 确认板子插在哪个口，按芯片厂家识别适配器 | mcp-serial `list_ports` |
-| `query` | 发送并读取；可 `expect` 等到子串，或等到线路安静 | MCU 日志、AT、bootloader；`encoding=hex` 发二进制帧。不传 `data` 则只读 | mcp-serial `query` |
-| `serial_write` | 只发不等待 | 发复位命令或 hex 帧 | mcp-serial `write` |
-| `reset_device` | 脉冲 DTR 并读启动输出 | 抓 boot log、看 HardFault；Arduino / ESP32 自动复位电路 | mcp-serial `reset_device` |
-| `take_photo` | 开摄像头拍一帧后关闭，保存到工作区并把图像返回给 Agent | 核对 LED / 屏幕 / 接线 | videocapture-mcp `quick_capture` |
+| `list_ports` | 列出 COM 口和 USB VID/PID | 确认板子插在哪个口 | mcp-serial `list_ports` |
+| `query` | 发送并读取；可 `expect` | MCU 日志、AT、bootloader | mcp-serial `query` |
+| `serial_write` | 只发不等待 | hex 帧 | mcp-serial `write` |
+| `reset_device` | 脉冲 DTR 并读启动输出 | 抓 boot log | mcp-serial `reset_device` |
+| `take_photo` | 拍一帧并返回图像 | 核对 LED / 屏幕 | videocapture-mcp `quick_capture` |
 
 典型一次任务：
 
@@ -65,14 +134,14 @@
 
 配置会写入：
 
-- `%USERPROFILE%\.cursor\mcp.json`
+- `%USERPROFILE%\.cursor\mcp.json` 或 Linux 的 `~/.cursor/mcp.json`
 - `<工作文件夹>\.cursor\mcp.json`
 
 工作区路径、工位名保存在套件目录的 `config.local.json`（已 gitignore）以及 `%USERPROFILE%\.cursor-workstation\config.json`。
 
 若 Cloud Agent 没有拉起本机 MCP，把同一条 stdio 命令加到 [Cloud Agents 集成](https://cursor.com/dashboard/integrations)：命令为 Python，参数 `-m workstation.mcp_server`，工作目录/环境变量里带上 `PYTHONPATH`（本仓库根）和 `WORKSTATION_ROOT`。stdio 会在你的工位上跑，才能碰到 COM 口和摄像头。
 
-可选：`MCP_SERIAL_ALLOWED_PORTS=COM3,COM4`（逗号分隔 glob）限制 Agent 能碰的串口，与 mcp-serial 的 allowlist 相同。
+可选：限制串口。Linux 现成配置默认允许 `/dev/ttyUSB*` 和 `/dev/ttyACM*`；也可设 `MCP_SERIAL_ALLOWED_PORTS`。Windows 自研 MCP 同样认这个环境变量。
 
 ## 路径与安全
 
@@ -84,19 +153,24 @@
 
 ```
 cursor-tool/
-  一键配置.bat          首次安装、选文件夹、登录、可选立即连接
-  启动连接.bat          以后每次连 worker（官方 agent worker start）
-  requirements.txt      mcp（官方 SDK）、pyserial、opencv-python
-  workstation/          Python 套件
-    mcp_server.py       FastMCP：list_ports / query / reset_device / take_photo
-    serial_io.py        串口（mcp-serial 子集，loop:// 可单测）
-    camera.py           拍照（quick_capture）
-    sandbox.py          仅约束拍照保存路径
-    setup.py / start.py 向导与启动
-  tests/                沙箱、loop:// 串口、MCP 协议
+  一键配置.sh / 启动连接.sh    Ubuntu：官方 CLI + 现成 MCP
+  一键配置.bat / 启动连接.bat  Windows 一键
+  mcp.off-the-shelf.json      现成 mcp-serial / framegrab 的 mcp.json
+  requirements.txt            仅 Windows 自研 MCP 需要
+  workstation/                向导、官方 CLI 定位；Windows 才跑 FastMCP
+  tests/
 ```
 
 ## 命令行等价操作
+
+Ubuntu 直接用官方命令即可（见上文）。向导封装：
+
+```bash
+python3 -m workstation setup
+python3 -m workstation start
+```
+
+Windows：
 
 ```bat
 python -m workstation setup
@@ -104,19 +178,20 @@ python -m workstation start
 python -m workstation mcp
 ```
 
-手动启动 worker（配置完成后），与[官方文档](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)相同：
+手动启动 worker：
 
-```bat
+```bash
 agent worker start --name 你的工位名 --worker-dir 你的工作文件夹
 ```
 
 ## 排查
 
-- **列表里看不到机器**：确认 `启动连接.bat` 窗口还在；用同一个 Cursor 账号；可运行 `agent worker start --debug`。
-- **MCP 没有串口/拍照**：看 `%USERPROFILE%\.cursor\mcp.json` 是否有 `windows-workstation`，然后执行 `agent mcp enable windows-workstation`；Cloud Agent 也可在 dashboard 里加同一条 stdio 命令。
-- **拍照失败**：安装摄像头驱动，或 `pip install opencv-python`；也可安装 ffmpeg。
-- **串口打不开**：设备管理器里确认 COM 口号，关闭占用该口的串口助手。
-- **编译器找不到**：在「系统环境变量 → Path」里加入工具链的 `bin` 目录，然后重新开 `启动连接.bat`。
+- **列表里看不到机器**：确认 worker 终端还在；同一 Cursor 账号；`agent worker start --debug`。
+- **Ubuntu 没有串口/拍照**：确认已装 `uv`（`uvx --version`），`~/.cursor/mcp.json` 与 `mcp.off-the-shelf.json` 一致；可运行 `agent mcp enable serial`。
+- **Linux 串口 Permission denied**：把用户加入 `dialout` 后重新登录；设备一般是 `/dev/ttyUSB0` 或 `/dev/ttyACM0`。
+- **Windows MCP 没有串口/拍照**：看 `%USERPROFILE%\.cursor\mcp.json` 是否有 `windows-workstation`，然后 `agent mcp enable windows-workstation`。
+- **拍照失败**：Linux 用 framegrab；Windows 安装摄像头驱动或 `opencv-python` / ffmpeg。
+- **编译器找不到**：把工具链 `bin` 加入 PATH 后重新开 worker。
 
 ## 网络
 

@@ -7,9 +7,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from workstation.agent_cli import install_agent
+from workstation.agent_cli import ensure_uv, install_agent
 from workstation.config import KIT_DIR, save_config
-from workstation.mcp_config import SERVER_NAME, install_mcp_configs
+from workstation.mcp_config import (
+    OFF_THE_SHELF_NAMES,
+    SERVER_NAME,
+    install_mcp_configs,
+    off_the_shelf_servers,
+)
 from workstation.sandbox import normalize_root
 
 
@@ -27,6 +32,15 @@ def _prompt(message: str, default: str = "") -> str:
 
 
 def _ensure_python_packages() -> None:
+    if os.name != "nt":
+        _print("Linux/macOS：硬件用现成 MCP（uvx mcp-serial / framegrab-mcp-server），不装本仓库自研依赖。")
+        uv = ensure_uv()
+        if uv is None:
+            _print("未找到 uv/uvx。可手动安装: curl -LsSf https://astral.sh/uv/install.sh | sh")
+            _print("没有 uv 时仍可启动 worker（改代码/编译），但串口和拍照 MCP 不会就绪。")
+        else:
+            _print(f"已找到 uv: {uv}")
+        return
     req = KIT_DIR / "requirements.txt"
     _print("正在安装 Python 依赖（官方 mcp SDK、pyserial、opencv-python）…")
     cmd = [sys.executable, "-m", "pip", "install", "-r", str(req)]
@@ -43,7 +57,7 @@ def _ask_workspace() -> Path:
     _print()
     _print("请指定 Cursor worker 的工作文件夹（官方参数 --worker-dir）。")
     _print("云端 Agent 的文件编辑和终端命令会在这个目录进行；本机编译器、烧录器走系统 PATH。")
-    _print("串口和摄像头由本套件的 MCP 提供（文件读写不再重复造轮子）。")
+    _print("串口和摄像头在 Linux 上用现成 MCP（mcp-serial / framegrab）；Windows 用本仓库 MCP。")
     raw = _prompt("工作文件夹完整路径", str(Path.home() / "CursorWork"))
     path = Path(raw).expanduser()
     if not path.is_absolute():
@@ -64,7 +78,8 @@ def _ask_worker_name() -> str:
             default = os.uname().nodename  # type: ignore[attr-defined]
         except Exception:
             default = ""
-    default = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in str(default)) or "windows-workstation"
+    fallback = "windows-workstation" if os.name == "nt" else "linux-workstation"
+    default = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in str(default)) or fallback
     name = _prompt("给这台工位起个名字（cursor.com/agents 里会显示）", default)
     return name.strip() or default
 
@@ -78,8 +93,9 @@ def _ask_api_key() -> str:
 
 def run_setup() -> int:
     os.chdir(KIT_DIR)
+    os_label = "Windows" if os.name == "nt" else "Linux/macOS"
     _print("========================================")
-    _print("  Cursor Windows 工位一键配置")
+    _print(f"  Cursor {os_label} 工位一键配置")
     _print("========================================")
     _print(f"套件目录: {KIT_DIR}")
     _print(f"Python:   {sys.executable} ({sys.version.split()[0]})")
@@ -117,36 +133,44 @@ def run_setup() -> int:
         _print("即将打开浏览器登录 Cursor，请使用你的账号完成授权。")
         subprocess.run([str(agent), "login"])
 
-    enable = subprocess.run(
-        [str(agent), "mcp", "enable", SERVER_NAME],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if enable.returncode != 0:
-        _print("提示: 如需手动启用 MCP，可运行: agent mcp enable windows-workstation")
-        if enable.stderr:
-            _print(enable.stderr.strip()[:400])
+    mcp_names = (SERVER_NAME,) if os.name == "nt" else OFF_THE_SHELF_NAMES
+    for name in mcp_names:
+        enable = subprocess.run(
+            [str(agent), "mcp", "enable", name],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if enable.returncode != 0:
+            _print(f"提示: 如需手动启用 MCP，可运行: agent mcp enable {name}")
+            if enable.stderr:
+                _print(enable.stderr.strip()[:400])
 
     _print()
     _print("配置完成。")
     _print(f"  工作区: {workspace}")
     _print(f"  工位名: {worker_name}")
-    _print("  文件 / 编译 / 烧录: Cursor worker 自带（--worker-dir + 系统 PATH）")
-    _print("  硬件 MCP（官方 FastMCP，对齐 mcp-serial / videocapture-mcp）:")
-    _print("    list_ports     列出 COM 口和 USB VID/PID")
-    _print("    query          串口收发；AT / 日志 / expect 等到应答")
-    _print("    serial_write   只发不等待（含 hex 帧）")
-    _print("    reset_device   脉冲 DTR 复位并抓 boot log")
-    _print("    take_photo     拍板子，把图像直接返回给 Agent")
+    _print("  文件 / 编译 / 烧录: Cursor 官方 worker（--worker-dir + 系统 PATH）")
+    if os.name == "nt":
+        _print("  硬件 MCP（本仓库 FastMCP，对齐 mcp-serial / videocapture-mcp）:")
+        _print("    list_ports / query / serial_write / reset_device / take_photo")
+    else:
+        names = ", ".join(off_the_shelf_servers())
+        _print(f"  硬件 MCP（现成 uvx，写入 ~/.cursor/mcp.json）: {names}")
+        _print("    serial     mcp-serial：list_ports / query / reset_device")
+        _print("    framegrab  framegrab-mcp-server：摄像头拍一帧")
+        _print("  串口权限: sudo usermod -aG dialout \"$USER\"  然后重新登录")
+        _print("  摄像头权限不足时可: sudo usermod -aG video \"$USER\"")
     _print()
-    start_now = _prompt("现在启动连接，让云端 Agent 连到这台 Windows 工位？ (Y/n)", "Y")
+    machine = "Windows" if os.name == "nt" else "这台 Linux"
+    start_now = _prompt(f"现在启动连接，让云端 Agent 连到{machine}工位？ (Y/n)", "Y")
     if start_now.lower() in {"y", "yes", "是", ""}:
         from workstation.start import run_start
 
         return run_start()
-    _print("以后请双击 启动连接.bat")
+    later = "启动连接.bat" if os.name == "nt" else "bash 启动连接.sh"
+    _print(f"以后请运行 {later}")
     return 0
 
 

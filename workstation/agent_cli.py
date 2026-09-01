@@ -47,6 +47,26 @@ def find_agent() -> Path | None:
     return paths[0] if paths else None
 
 
+def _prepend_local_bin() -> None:
+    local_bin = str(Path.home() / ".local" / "bin")
+    os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
+
+
+def ensure_uv() -> Path | None:
+    """定位或安装 Astral uv（Linux 上用 uvx 拉现成 MCP）。"""
+    _prepend_local_bin()
+    for name in ("uvx", "uv"):
+        found = shutil.which(name)
+        if found:
+            return Path(found)
+    if os.name == "nt":
+        return None
+    subprocess.run("curl -LsSf https://astral.sh/uv/install.sh | sh", shell=True, check=False)
+    _prepend_local_bin()
+    found = shutil.which("uvx") or shutil.which("uv")
+    return Path(found) if found else None
+
+
 def install_agent() -> Path:
     existing = find_agent()
     if existing:
@@ -66,14 +86,13 @@ def install_agent() -> Path:
             ],
             check=False,
         )
-    # 安装程序会改用户 PATH，当前进程不一定看得到
-    local_bin = str(Path.home() / ".local" / "bin")
-    os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
+    _prepend_local_bin()
     found = find_agent()
     if not found:
+        hint = "agent" if os.name != "nt" else "agent.exe"
         raise RuntimeError(
             "Cursor CLI（agent）安装后仍找不到。请新开一个终端，确认能运行 agent --version，"
-            "或把 agent.exe 所在目录加入 PATH。"
+            f"或把 {hint} 所在目录加入 PATH。"
         )
     return found
 
