@@ -6,10 +6,7 @@ import os
 import subprocess
 import sys
 
-from workstation.agent_cli import ensure_uv, find_agent, install_agent
-from workstation.config import load_config
-from workstation.mcp_config import install_mcp_configs
-from workstation.sandbox import normalize_root
+from workstation.launcher import prepare_session
 
 
 def _print(msg: str = "") -> None:
@@ -17,63 +14,38 @@ def _print(msg: str = "") -> None:
 
 
 def run_start() -> int:
+    from workstation.config import load_config
+    from workstation.sandbox import normalize_root
+
     cfg = load_config()
     workspace_raw = str(cfg.get("workspace") or "")
     if not workspace_raw:
-        hint = "一键配置.bat" if os.name == "nt" else "bash 一键配置.sh"
+        hint = "启动工位.py 或 一键配置.bat" if os.name == "nt" else "python3 启动工位.py"
         _print(f"还没有配置工作文件夹。请先运行 {hint}")
         return 1
     try:
-        workspace = normalize_root(workspace_raw)
+        normalize_root(workspace_raw)
     except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
         _print(str(exc))
-        hint = "一键配置.bat" if os.name == "nt" else "bash 一键配置.sh"
-        _print(f"请重新运行 {hint}")
         return 1
 
-    python_exe = str(cfg.get("python") or sys.executable)
-    worker_name = str(cfg.get("worker_name") or ("windows-workstation" if os.name == "nt" else "linux-workstation"))
-    api_key = str(cfg.get("api_key") or "").strip()
-    if os.name != "nt":
-        ensure_uv()
-    install_mcp_configs(python_exe, str(workspace))
-
-    agent = find_agent() or install_agent()
-    os.environ["PATH"] = str(agent.parent) + os.pathsep + os.environ.get("PATH", "")
-
-    cmd = [
-        str(agent),
-        "worker",
-        "start",
-        "--name",
-        worker_name,
-        "--worker-dir",
-        str(workspace),
-    ]
-    if api_key:
-        cmd.extend(["--api-key", api_key])
-
+    info = prepare_session(
+        workspace_raw,
+        str(cfg.get("worker_name") or ""),
+        str(cfg.get("api_key") or ""),
+        str(cfg.get("python") or sys.executable),
+        log=_print,
+    )
     _print("========================================")
     _print("  正在连接 Cursor worker")
     _print("========================================")
-    _print(f"工位名:   {worker_name}")
-    _print(f"工作区:   {workspace}")
-    _print("用途: 云端 Agent 在本文件夹改代码、编译烧录（官方 worker）；")
-    if os.name == "nt":
-        _print("      串口和拍照走本仓库 MCP。")
-    else:
-        _print("      串口走 mcp-serial，拍照走 framegrab-mcp-server（uvx 现成包）。")
-    _print("请保持本窗口不要关闭。")
-    _print("然后打开 https://cursor.com/agents ，在环境列表里选择这台机器。")
+    _print(f"工位名:   {info['worker_name']}")
+    _print(f"工作区:   {info['workspace']}")
+    _print("请保持本窗口不要关闭。然后打开 https://cursor.com/agents")
+    _print("命令: " + str(info["display"]))
     _print()
-    display = list(cmd)
-    if api_key:
-        display[-1] = "***"
-    _print("命令: " + " ".join(display))
-    _print()
-
     try:
-        completed = subprocess.run(cmd)
+        completed = subprocess.run(info["command"])
         return int(completed.returncode)
     except KeyboardInterrupt:
         _print("\n已停止 worker")

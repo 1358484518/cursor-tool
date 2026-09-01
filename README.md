@@ -4,7 +4,28 @@
 
 把你桌上的电脑登记为 Cursor Cloud Agent 的 [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines) worker。云端任务在你指定的文件夹里改代码、跑终端，并可调用本机串口和摄像头。
 
-**Ubuntu 不必用本仓库自研 MCP。** 文件和终端用官方 `agent worker`；串口用现成的 [mcp-serial](https://github.com/HumbertoBernal/mcp-serial)；拍照用现成的 [framegrab-mcp-server](https://pypi.org/project/framegrab-mcp-server/)。本仓库只帮你写好 `mcp.json` 并启动官方 CLI。
+## 最简单：跑一个 Python 窗口
+
+Win / Linux 同一个入口（标准库 **tkinter**，不再写两套脚本）：
+
+```bash
+python 启动工位.py          # Windows 也可双击 启动工位.py / 启动工位.bat
+python3 启动工位.py         # Ubuntu
+# 或
+python3 -m workstation
+```
+
+窗口里选工作文件夹 →（可选）浏览器登录 → 点 **启动**。它只做三件事：写入现成 MCP 配置、调用官方 `agent worker start`、把日志打在窗口里。
+
+Ubuntu 若提示没有 tkinter：
+
+```bash
+sudo apt install python3-tk
+```
+
+然后到 [cursor.com/agents](https://cursor.com/agents) 选这台机器即可。
+
+**Ubuntu 不必用本仓库自研 MCP。** 文件和终端用官方 `agent worker`；串口用现成的 [mcp-serial](https://github.com/HumbertoBernal/mcp-serial)；拍照用现成的 [framegrab-mcp-server](https://pypi.org/project/framegrab-mcp-server/)。
 
 ## 这个套件有什么用
 
@@ -85,7 +106,7 @@ bash 启动连接.sh
 
 | 能力 | 怎么实现 |
 | --- | --- |
-| 连上 Cursor worker | 官方 `agent worker start`（Windows 用 bat，Ubuntu 用官方命令或 `一键配置.sh`） |
+| 连上 Cursor worker | `python 启动工位.py`（官方 `agent worker start`） |
 | 工作区限定一个文件夹 | 官方 `--worker-dir` |
 | 编译器 / 烧录器可用 | worker 终端保留系统 PATH |
 | 串口 / 拍照 | Ubuntu：现成 uvx MCP；Windows：本仓库 FastMCP |
@@ -153,12 +174,12 @@ Windows 上一键配置仍启动本仓库 FastMCP（工具名见下表），避�
 
 ```
 cursor-tool/
-  一键配置.sh / 启动连接.sh    Ubuntu：官方 CLI + 现成 MCP
-  一键配置.bat / 启动连接.bat  Windows 一键
-  mcp.off-the-shelf.json      现成 mcp-serial / framegrab 的 mcp.json
-  requirements.txt            仅 Windows 自研 MCP 需要
-  workstation/                向导、官方 CLI 定位；Windows 才跑 FastMCP
-  tests/
+  启动工位.py / 启动工位.bat   跨平台 GUI（推荐）
+  一键配置.sh / 启动连接.sh    Ubuntu 命令行
+  一键配置.bat / 启动连接.bat  Windows 命令行
+  mcp.off-the-shelf.json      现成 mcp-serial / framegrab
+  workstation/gui.py          tkinter 界面
+  workstation/launcher.py     组装官方 worker 命令
 ```
 
 ## 命令行等价操作
@@ -166,8 +187,10 @@ cursor-tool/
 Ubuntu 直接用官方命令即可（见上文）。向导封装：
 
 ```bash
-python3 -m workstation setup
-python3 -m workstation start
+python3 启动工位.py
+python3 -m workstation        # 默认打开 GUI
+python3 -m workstation setup  # 命令行向导
+python3 -m workstation start  # 无界面启动 worker
 ```
 
 Windows：
