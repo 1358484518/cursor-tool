@@ -4,28 +4,55 @@
 
 把你桌上的电脑登记为 Cursor Cloud Agent 的 [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines) worker。云端任务在你指定的文件夹里改代码、跑终端，并可调用本机串口和摄像头。
 
-## 最简单：跑一个 Python 窗口
+推荐用 GUI 操作：底下仍是官方 `agent worker` 和现成 MCP，窗口只负责选目录、登录、启动。
 
-Win / Linux 同一个入口（标准库 **tkinter**，不再写两套脚本）：
+## 怎么用
+
+在**插着板子、装着编译器的那台电脑**上操作。先拉最新 `main`（不要用旧的中文文件名那一版）。
+
+### 第一次
+
+1. 下载本仓库：https://github.com/1358484518/cursor-tool
+2. 安装 Python 3.10 或更高  
+   - Windows：用 [python.org](https://www.python.org/downloads/windows/) 安装包，勾选 **Add python.exe to PATH**（自带 Tk 界面）  
+   - Ubuntu：`sudo apt install python3 python3-tk`
+3. 在仓库目录打开启动窗口：
 
 ```bash
-python launch.py          # Windows 也可双击 launch.py / launch.bat
-python3 launch.py         # Ubuntu
+python launch.py       # Windows，也可双击 launch.py / launch.bat
+python3 launch.py      # Ubuntu
 # 或
 python3 -m workstation
 ```
 
-窗口里选工作文件夹 →（可选）浏览器登录 → 点 **启动**。它只做三件事：写入现成 MCP 配置、调用官方 `agent worker start`、把日志打在窗口里。
+Ubuntu 若提示没有 tkinter：`sudo apt install python3-tk`
 
-Ubuntu 若提示没有 tkinter：
+4. 在窗口里：
+   - **工作文件夹**：选你的固件工程目录（源码、hex 都放这儿）
+   - **工位名称**：随便起，[cursor.com/agents](https://cursor.com/agents) 列表里会显示
+   - **API Key**：留空
+   - 点 **检查并写入配置**（第一次会安装官方 `agent` CLI）
+   - 点 **浏览器登录**（和 cursor.com **同一个账号**）
+   - 点 **启动**，**窗口不要关**
+5. 打开 [https://cursor.com/agents](https://cursor.com/agents)，在环境列表里选刚起的那台工位，再发任务。  
+   例如：「编译这个工程并看串口日志」。
 
-```bash
-sudo apt install python3-tk
-```
+### 以后每次
 
-然后到 [cursor.com/agents](https://cursor.com/agents) 选这台机器即可。
+打开 `launch.py` → 点 **启动** → 到 agents 里选这台机器。登录一般不用再做。
 
-**Ubuntu 不必用本仓库自研 MCP。** 文件和终端用官方 `agent worker`；串口用现成的 [mcp-serial](https://github.com/HumbertoBernal/mcp-serial)；拍照用现成的 [framegrab-mcp-server](https://pypi.org/project/framegrab-mcp-server/)。
+### 你提需求时 Agent 实际会做什么
+
+- 在你选的文件夹里改代码、跑本机已安装的编译器 / 烧录器（走系统 PATH）
+- Linux：串口用现成 [mcp-serial](https://github.com/HumbertoBernal/mcp-serial)，拍照用现成 [framegrab-mcp-server](https://pypi.org/project/framegrab-mcp-server/)
+- Windows：串口 / 拍照走本仓库 MCP（对齐上面两个项目，避免再装 uv）
+
+### 注意
+
+- `launch.py` 关了，云端就连不上这台电脑。
+- 工程、Keil / gcc / J-Link 等必须装在这台机器上，并已加入 PATH。
+- 串口被串口助手占用会打不开。Linux 请执行 `sudo usermod -aG dialout "$USER"` 后**重新登录**。
+- 在 cursor.com 里开任务时必须**选中这台工位**。没选中的 Cloud Agent 跑在云端虚拟机里，碰不到你桌上的板子。
 
 ## 这个套件有什么用
 
@@ -39,44 +66,33 @@ sudo apt install python3-tk
 | 摄像头（Linux） | 现成 `uvx framegrab-mcp-server` |
 | 串口 + 拍照（Windows 一键） | 本仓库 FastMCP（对齐上述两个项目，避免再装 Node/uv） |
 
-## Ubuntu 怎么用（推荐：直接用官方命令）
+## 命令行用法（可选）
 
-在工程目录里执行（与[官方文档](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)相同）：
+不喜欢 GUI 时，也可以只用官方 CLI（与 [My Machines 文档](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines) 相同）：
 
 ```bash
 # 1. 官方 Cursor CLI
-curl https://cursor.com/install -fsS | bash
+curl https://cursor.com/install -fsS | bash          # macOS / Linux
+# Windows PowerShell: irm 'https://cursor.com/install?win32=true' | iex
 export PATH="$HOME/.local/bin:$PATH"
 agent login
 
-# 2. 现成 MCP 运行器
+# 2. Linux 现成 MCP（串口 / 拍照）
 curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-
-# 3. 把仓库里的现成配置拷到 Cursor（或手动合并）
-mkdir -p ~/.cursor
 cp mcp.off-the-shelf.json ~/.cursor/mcp.json
 
-# 4. 串口权限（USB 转串口）
-sudo usermod -aG dialout "$USER"   # 然后注销再登录
-
-# 5. 启动 worker（窗口不要关）
+# 3. 启动 worker（在固件仓库目录，窗口不要关）
 agent worker start --name "$(hostname)" --worker-dir "$PWD"
 ```
 
-然后打开 [cursor.com/agents](https://cursor.com/agents)，在环境列表里选这台机器。
-
-也可以在本仓库目录运行封装脚本（同样只调官方 CLI + 现成 MCP，不装自研服务）：
+仓库里的封装脚本同样只调官方工具：
 
 ```bash
-git clone https://github.com/1358484518/cursor-tool
-cd cursor-tool
-bash setup.sh
-# 以后每次：
-bash connect.sh
+bash setup.sh && bash connect.sh     # Ubuntu
+setup.bat / connect.bat              # Windows
 ```
 
-`mcp.off-the-shelf.json` 里的启动方式与上游文档一致：
+`mcp.off-the-shelf.json` 与上游文档一致：
 
 ```json
 {
@@ -93,23 +109,6 @@ bash connect.sh
   }
 }
 ```
-
-## Windows 怎么用
-
-1. 把本仓库放到电脑上，双击 **`setup.bat`**。
-2. 指定 worker 工作文件夹（`--worker-dir`）。
-3. 浏览器登录 Cursor。
-4. 以后日常双击 **`connect.bat`**（或用 **`launch.py`**），窗口不要关。
-5. 打开 [cursor.com/agents](https://cursor.com/agents)，选这台工位再发任务。
-
-## 你要的能力
-
-| 能力 | 怎么实现 |
-| --- | --- |
-| 连上 Cursor worker | `python launch.py`（官方 `agent worker start`） |
-| 工作区限定一个文件夹 | 官方 `--worker-dir` |
-| 编译器 / 烧录器可用 | worker 终端保留系统 PATH |
-| 串口 / 拍照 | Ubuntu：现成 uvx MCP；Windows：本仓库 FastMCP |
 
 ## 环境要求
 
@@ -210,7 +209,7 @@ agent worker start --name 你的工位名 --worker-dir 你的工作文件夹
 
 ## 排查
 
-- **列表里看不到机器**：确认 worker 终端还在；同一 Cursor 账号；`agent worker start --debug`。
+- **列表里看不到机器**：确认 `launch.py` 窗口还在；同一 Cursor 账号；任务里选中了这台工位；可运行 `agent worker start --debug`。
 - **Ubuntu 没有串口/拍照**：确认已装 `uv`（`uvx --version`），`~/.cursor/mcp.json` 与 `mcp.off-the-shelf.json` 一致；可运行 `agent mcp enable serial`。
 - **Linux 串口 Permission denied**：把用户加入 `dialout` 后重新登录；设备一般是 `/dev/ttyUSB0` 或 `/dev/ttyACM0`。
 - **Windows MCP 没有串口/拍照**：看 `%USERPROFILE%\.cursor\mcp.json` 是否有 `windows-workstation`，然后 `agent mcp enable windows-workstation`。
