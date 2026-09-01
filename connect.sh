@@ -12,7 +12,7 @@ echo "请保持本终端不要关闭。"
 echo
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "找不到 python3。请先运行: bash 一键配置.sh"
+  echo "找不到 python3。请先运行: bash setup.sh"
   exit 1
 fi
 
