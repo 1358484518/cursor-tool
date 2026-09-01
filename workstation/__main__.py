@@ -7,7 +7,12 @@ import sys
 
 def main() -> None:
     args = sys.argv[1:]
-    if not args or args[0] in {"setup", "configure", "config"}:
+    if not args or args[0] in {"gui", "ui", "launcher"}:
+        from workstation.gui import main as gui_main
+
+        gui_main()
+        return
+    if args[0] in {"setup", "configure", "config"}:
         from workstation.setup import main as setup_main
 
         setup_main()
@@ -22,7 +27,7 @@ def main() -> None:
 
         mcp_main()
         return
-    print("用法: python -m workstation [setup|start|mcp]", flush=True)
+    print("用法: python -m workstation [gui|setup|start|mcp]", flush=True)
     raise SystemExit(2)
 
 
