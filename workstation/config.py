@@ -48,6 +48,7 @@ def save_config(config: dict[str, Any]) -> Path:
         "worker_name": str(config.get("worker_name") or ("windows-workstation" if os.name == "nt" else "linux-workstation")),
         "api_key": str(config.get("api_key") or ""),
         "python": str(config.get("python") or sys.executable),
+        "https_proxy": str(config.get("https_proxy") or ""),
     }
     local_path = KIT_DIR / CONFIG_NAME
     local_path.write_text(

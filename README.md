@@ -31,6 +31,7 @@ Ubuntu 若提示没有 tkinter：`sudo apt install python3-tk`
    - **工作文件夹**：选你的固件工程目录（源码、hex 都放这儿）
    - **工位名称**：随便起，[cursor.com/agents](https://cursor.com/agents) 列表里会显示
    - **API Key**：留空
+   - **HTTPS 代理**：一般留空。若启动时报 SSL / EPROTO，再填本地代理，例如 `http://127.0.0.1:7890`
    - 点 **检查并写入配置**（第一次会安装官方 `agent` CLI）
    - 点 **浏览器登录**（和 cursor.com **同一个账号**）
    - 点 **启动**，**窗口不要关**
@@ -53,6 +54,7 @@ Ubuntu 若提示没有 tkinter：`sudo apt install python3-tk`
 - 工程、Keil / gcc / J-Link 等必须装在这台机器上，并已加入 PATH。
 - 串口被串口助手占用会打不开。Linux 请执行 `sudo usermod -aG dialout "$USER"` 后**重新登录**。
 - 在 cursor.com 里开任务时必须**选中这台工位**。没选中的 Cloud Agent 跑在云端虚拟机里，碰不到你桌上的板子。
+- 浏览器能打开 cursor.com，不代表官方 worker 能连上 `api2.cursor.sh`（登录走浏览器，worker 走 Node HTTPS）。
 
 ## 这个套件有什么用
 
@@ -209,6 +211,14 @@ agent worker start --name 你的工位名 --worker-dir 你的工作文件夹
 
 ## 排查
 
+- **启动时报 `EPROTO` / `packet length too long` / Failed to validate worker account settings**：TLS 被中间设备打断，配置本身没问题。点窗口里的 **检查网络**；给 worker 配 HTTP 代理（`http://127.0.0.1:7890` 一类，不要写成 `https://`）；从终端启动以便带上环境变量：
+  ```bash
+  export HTTPS_PROXY=http://127.0.0.1:7890
+  export HTTP_PROXY="$HTTPS_PROXY"
+  export NODE_USE_ENV_PROXY=1
+  python3 launch.py
+  ```
+  也可先跑 `curl -vI https://api2.cursor.sh` 和 `agent worker debug`。桌面双击 `launch.py` **不会**读取 `~/.bashrc` 里的代理。
 - **列表里看不到机器**：确认 `launch.py` 窗口还在；同一 Cursor 账号；任务里选中了这台工位；可运行 `agent worker start --debug`。
 - **Ubuntu 没有串口/拍照**：确认已装 `uv`（`uvx --version`），`~/.cursor/mcp.json` 与 `mcp.off-the-shelf.json` 一致；可运行 `agent mcp enable serial`。
 - **Linux 串口 Permission denied**：把用户加入 `dialout` 后重新登录；设备一般是 `/dev/ttyUSB0` 或 `/dev/ttyACM0`。
@@ -222,5 +232,7 @@ Worker 只需要出站 HTTPS，不必开入站端口。需能访问：
 
 - `api2.cursor.sh` / `api2direct.cursor.sh`
 - 产物上传：`cloud-agent-artifacts.s3.us-east-1.amazonaws.com`
+
+走代理时，在窗口填写 **HTTPS 代理**，或设置 `HTTPS_PROXY` / `https_proxy`，并加上 `NODE_USE_ENV_PROXY=1`（[官方说明](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)）。部分代理不能传 HTTP/2，填写代理后本工具会在 `~/.cursor/cli-config.json` 写入 `network.useHttp1ForAgent: true`。
 
 详细说明见 [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines)。

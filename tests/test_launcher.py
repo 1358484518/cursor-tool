@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from workstation.launcher import default_worker_name, display_command, prepare_session, worker_command
+from workstation.launcher import (
+    WorkerProcess,
+    default_worker_name,
+    display_command,
+    prepare_session,
+    worker_command,
+)
 
 
 class LauncherTests(unittest.TestCase):
@@ -48,8 +55,25 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(info["worker_name"], "my-box")
         self.assertEqual(info["workspace"], root.resolve())
         self.assertIn("worker", info["command"])
+        self.assertIn("env", info)
         saved.assert_called_once()
         self.assertTrue(any("MCP" in line for line in logs))
+        self.assertTrue(any("代理" in line for line in logs))
+
+    def test_pump_output_explains_eproto_once(self) -> None:
+        worker = WorkerProcess()
+        worker._tls_hinted = False
+        worker.proc = type("P", (), {})()
+        worker.proc.stdout = io.StringIO(
+            "Starting worker...\n"
+            "Error: Failed to validate worker account settings: [internal] write EPROTO "
+            "packet length too long\n"
+            "more ssl routines noise\n"
+        )
+        logs: list[str] = []
+        worker.pump_output(logs.append)
+        hints = [line for line in logs if "HTTPS 代理" in line]
+        self.assertEqual(len(hints), 1)
 
 
 class GuiImportTests(unittest.TestCase):

@@ -15,6 +15,7 @@ from queue import Empty, Queue
 from workstation.agent_cli import agent_cmd, find_agent, install_agent
 from workstation.config import load_config
 from workstation.launcher import WorkerProcess, default_worker_name, prepare_session
+from workstation.network import probe_worker_hosts, worker_child_env
 
 AGENTS_URL = "https://cursor.com/agents"
 
@@ -47,8 +48,8 @@ class LauncherApp:
 
         cfg = load_config()
         root.title("Cursor 工位")
-        root.minsize(560, 420)
-        root.geometry("640x480")
+        root.minsize(560, 480)
+        root.geometry("680x540")
 
         pad = {"padx": 10, "pady": 4}
         frm = ttk.Frame(root, padding=12)
@@ -76,24 +77,41 @@ class LauncherApp:
             row=4, column=1, columnspan=2, sticky="w", padx=10
         )
 
+        ttk.Label(frm, text="HTTPS 代理").grid(row=5, column=0, sticky="e", **pad)
+        self.https_proxy = tk.StringVar(
+            value=str(cfg.get("https_proxy") or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or "")
+        )
+        ttk.Entry(frm, textvariable=self.https_proxy).grid(row=5, column=1, columnspan=2, sticky="ew", **pad)
+        ttk.Label(
+            frm,
+            text="可留空。连不上 api2.cursor.sh 时填写，例如 http://127.0.0.1:7890（Clash）或 10809（v2rayN）",
+            foreground="#555",
+            wraplength=520,
+        ).grid(row=6, column=1, columnspan=2, sticky="w", padx=10)
+
         btns = ttk.Frame(frm)
-        btns.grid(row=5, column=0, columnspan=3, sticky="w", pady=8)
-        ttk.Button(btns, text="检查并写入配置", command=self._on_prepare).pack(side="left", padx=4)
-        ttk.Button(btns, text="浏览器登录", command=self._on_login).pack(side="left", padx=4)
-        self.btn_start = ttk.Button(btns, text="启动", command=self._on_start)
+        btns.grid(row=7, column=0, columnspan=3, sticky="w", pady=8)
+        row1 = ttk.Frame(btns)
+        row1.pack(anchor="w")
+        row2 = ttk.Frame(btns)
+        row2.pack(anchor="w", pady=(4, 0))
+        ttk.Button(row1, text="检查并写入配置", command=self._on_prepare).pack(side="left", padx=4)
+        ttk.Button(row1, text="浏览器登录", command=self._on_login).pack(side="left", padx=4)
+        ttk.Button(row1, text="检查网络", command=self._on_check_network).pack(side="left", padx=4)
+        self.btn_start = ttk.Button(row2, text="启动", command=self._on_start)
         self.btn_start.pack(side="left", padx=4)
-        self.btn_stop = ttk.Button(btns, text="停止", command=self._on_stop, state="disabled")
+        self.btn_stop = ttk.Button(row2, text="停止", command=self._on_stop, state="disabled")
         self.btn_stop.pack(side="left", padx=4)
-        ttk.Button(btns, text="打开 Agents", command=lambda: webbrowser.open(AGENTS_URL)).pack(side="left", padx=4)
+        ttk.Button(row2, text="打开 Agents", command=lambda: webbrowser.open(AGENTS_URL)).pack(side="left", padx=4)
 
         self.status = tk.StringVar(value="未运行")
-        ttk.Label(frm, textvariable=self.status).grid(row=6, column=0, columnspan=3, sticky="w", **pad)
+        ttk.Label(frm, textvariable=self.status).grid(row=8, column=0, columnspan=3, sticky="w", **pad)
 
         self.log = scrolledtext.ScrolledText(frm, height=14, wrap="word", state="disabled")
-        self.log.grid(row=7, column=0, columnspan=3, sticky="nsew", **pad)
+        self.log.grid(row=9, column=0, columnspan=3, sticky="nsew", **pad)
 
         frm.columnconfigure(1, weight=1)
-        frm.rowconfigure(7, weight=1)
+        frm.rowconfigure(9, weight=1)
 
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._pump()
@@ -118,7 +136,7 @@ class LauncherApp:
         if path:
             self.workspace.set(path)
 
-    def _collect(self) -> tuple[str, str, str]:
+    def _collect(self) -> tuple[str, str, str, str]:
         ws = self.workspace.get().strip()
         if not ws:
             raise ValueError("请先选择工作文件夹")
@@ -128,7 +146,12 @@ class LauncherApp:
                 folder.mkdir(parents=True, exist_ok=True)
             else:
                 raise ValueError("未选择有效工作文件夹")
-        return str(folder), self.worker_name.get().strip(), self.api_key.get().strip()
+        return (
+            str(folder),
+            self.worker_name.get().strip(),
+            self.api_key.get().strip(),
+            self.https_proxy.get().strip(),
+        )
 
     def _run_bg(self, fn) -> None:
         if self._busy:
@@ -153,9 +176,9 @@ class LauncherApp:
             return
 
         def work() -> None:
-            ws, name, key = args
+            ws, name, key, proxy = args
             self._append("正在检查 CLI 并写入 MCP 配置…")
-            info = prepare_session(ws, name, key, log=self._append)
+            info = prepare_session(ws, name, key, https_proxy=proxy, log=self._append)
             self._append(f"工位: {info['worker_name']}")
             self._append(f"工作区: {info['workspace']}")
             self._append("配置完成。下一步：登录（如需要）然后点「启动」。")
@@ -166,12 +189,36 @@ class LauncherApp:
         def work() -> None:
             self._append("正在打开浏览器登录（agent login）…")
             agent = find_agent() or install_agent()
-            completed = agent_cmd(agent, "login")
+            completed = agent_cmd(agent, "login", env=worker_child_env(self.https_proxy.get().strip()))
             if completed.stdout:
                 self._append(completed.stdout.strip())
             if completed.stderr:
                 self._append(completed.stderr.strip())
             self._append("登录命令结束。" if completed.returncode == 0 else f"登录退出码 {completed.returncode}")
+            self._append("登录走浏览器，worker 另走 Node HTTPS。若启动时报 EPROTO / SSL，请点「检查网络」或填写代理。")
+
+        self._run_bg(work)
+
+    def _on_check_network(self) -> None:
+        proxy = self.https_proxy.get().strip()
+
+        def work() -> None:
+            self._append("正在检查 worker 出站网络（api2.cursor.sh）…")
+            for line in probe_worker_hosts(proxy):
+                self._append(line)
+            agent = find_agent()
+            if agent is None:
+                self._append("未找到 agent CLI，可先点「检查并写入配置」。")
+                return
+            self._append("运行 agent worker debug …")
+            completed = agent_cmd(agent, "worker", "debug", env=worker_child_env(proxy))
+            if completed.stdout:
+                self._append(completed.stdout.strip())
+            if completed.stderr:
+                self._append(completed.stderr.strip())
+            self._append(
+                "检查结束。" if completed.returncode == 0 else f"debug 退出码 {completed.returncode}"
+            )
 
         self._run_bg(work)
 
@@ -186,14 +233,16 @@ class LauncherApp:
             if self.worker.running:
                 self._append("已经在运行。")
                 return
-            ws, name, key = args
+            ws, name, key, proxy = args
             self._append("准备启动官方 worker…")
-            info = prepare_session(ws, name, key, log=self._append)
+            info = prepare_session(ws, name, key, https_proxy=proxy, log=self._append)
             self._append("命令: " + str(info["display"]))
+            for line in probe_worker_hosts(proxy):
+                self._append(line)
             self.root.after(0, lambda: self.status.set(f"运行中 · {info['worker_name']}"))
             self.root.after(0, lambda: self.btn_start.state(["disabled"]))
             self.root.after(0, lambda: self.btn_stop.state(["!disabled"]))
-            self.worker.start(info["command"], self._append)
+            self.worker.start(info["command"], self._append, env=info["env"])
             self._busy = False
             self.worker.pump_output(self._append)
             code = self.worker.proc.returncode if self.worker.proc else None

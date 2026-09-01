@@ -2,5 +2,6 @@
   "workspace": "D:\\work\\firmware",
   "worker_name": "windows-workstation",
   "api_key": "",
-  "python": ""
+  "python": "",
+  "https_proxy": ""
 }

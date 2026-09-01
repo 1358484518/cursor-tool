@@ -34,6 +34,7 @@ def run_start() -> int:
         str(cfg.get("worker_name") or ""),
         str(cfg.get("api_key") or ""),
         str(cfg.get("python") or sys.executable),
+        str(cfg.get("https_proxy") or ""),
         log=_print,
     )
     _print("========================================")
@@ -45,7 +46,7 @@ def run_start() -> int:
     _print("命令: " + str(info["display"]))
     _print()
     try:
-        completed = subprocess.run(info["command"])
+        completed = subprocess.run(info["command"], env=info["env"])
         return int(completed.returncode)
     except KeyboardInterrupt:
         _print("\n已停止 worker")

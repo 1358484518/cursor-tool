@@ -15,6 +15,12 @@ from typing import Callable, TextIO
 from workstation.agent_cli import ensure_uv, find_agent, install_agent
 from workstation.config import save_config
 from workstation.mcp_config import install_mcp_configs
+from workstation.network import (
+    ensure_http1_for_agent,
+    explain_tls_failure,
+    proxy_summary,
+    worker_child_env,
+)
 from workstation.sandbox import normalize_root
 
 LogFn = Callable[[str], None]
@@ -59,6 +65,7 @@ def prepare_session(
     worker_name: str = "",
     api_key: str = "",
     python_exe: str = "",
+    https_proxy: str = "",
     log: LogFn | None = None,
 ) -> dict:
     """保存配置、写入 MCP、确保 agent/uv，返回可 Popen 的命令。"""
@@ -70,12 +77,14 @@ def prepare_session(
     name = (worker_name or default_worker_name()).strip() or default_worker_name()
     py = python_exe or sys.executable
     root = normalize_root(workspace)
+    proxy = https_proxy.strip()
     save_config(
         {
             "workspace": str(root),
             "worker_name": name,
             "api_key": api_key.strip(),
             "python": py,
+            "https_proxy": proxy,
         }
     )
     if os.name != "nt":
@@ -87,12 +96,20 @@ def prepare_session(
     agent = find_agent() or install_agent()
     os.environ["PATH"] = str(agent.parent) + os.pathsep + os.environ.get("PATH", "")
     _log(f"agent: {agent}")
+    env = worker_child_env(proxy)
+    _log(proxy_summary(proxy))
+    if proxy:
+        hint = ensure_http1_for_agent()
+        if hint:
+            _log(hint)
     cmd = worker_command(agent, name, root, api_key)
     return {
         "agent": agent,
         "workspace": root,
         "worker_name": name,
         "api_key": api_key.strip(),
+        "https_proxy": proxy,
+        "env": env,
         "command": cmd,
         "display": display_command(cmd, api_key),
     }
@@ -103,14 +120,16 @@ class WorkerProcess:
 
     def __init__(self) -> None:
         self.proc: subprocess.Popen[str] | None = None
+        self._tls_hinted = False
 
     @property
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, command: list[str], log: LogFn) -> None:
+    def start(self, command: list[str], log: LogFn, env: dict[str, str] | None = None) -> None:
         if self.running:
             raise RuntimeError("worker 已在运行")
+        self._tls_hinted = False
         kwargs: dict = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,
@@ -119,6 +138,8 @@ class WorkerProcess:
             "errors": "replace",
             "bufsize": 1,
         }
+        if env is not None:
+            kwargs["env"] = env
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
         else:
@@ -132,7 +153,13 @@ class WorkerProcess:
             return
         stdout: TextIO = proc.stdout
         for line in stdout:
-            log(line.rstrip("\n"))
+            text = line.rstrip("\n")
+            log(text)
+            if not self._tls_hinted:
+                hint = explain_tls_failure(text)
+                if hint:
+                    self._tls_hinted = True
+                    log(hint)
 
     def stop(self, log: LogFn | None = None) -> None:
         proc = self.proc
