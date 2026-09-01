@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "serial": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/HumbertoBernal/mcp-serial",
+        "mcp-serial"
+      ],
+      "env": {
+        "MCP_SERIAL_ALLOWED_PORTS": "/dev/ttyUSB*,/dev/ttyACM*"
+      }
+    },
+    "framegrab": {
+      "command": "uvx",
+      "args": ["framegrab-mcp-server"],
+      "env": {
+        "ENABLE_FRAMEGRAB_AUTO_DISCOVERY": "true"
+      }
+    }
+  }
+}
