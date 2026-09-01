@@ -15,7 +15,7 @@ from queue import Empty, Queue
 from workstation.agent_cli import agent_cmd, find_agent, install_agent
 from workstation.config import load_config
 from workstation.launcher import WorkerProcess, default_worker_name, prepare_session
-from workstation.network import probe_worker_hosts, worker_child_env
+from workstation.network import probe_session, worker_child_env
 
 AGENTS_URL = "https://cursor.com/agents"
 
@@ -204,18 +204,32 @@ class LauncherApp:
 
         def work() -> None:
             self._append("正在检查 worker 出站网络（api2.cursor.sh）…")
-            for line in probe_worker_hosts(proxy):
+            session = probe_session(proxy)
+            for line in session["lines"]:
                 self._append(line)
             agent = find_agent()
             if agent is None:
                 self._append("未找到 agent CLI，可先点「检查并写入配置」。")
                 return
             self._append("运行 agent worker debug …")
-            completed = agent_cmd(agent, "worker", "debug", env=worker_child_env(proxy))
+            try:
+                completed = agent_cmd(
+                    agent,
+                    "worker",
+                    "debug",
+                    env=session["env"],
+                    capture_output=True,
+                    timeout=90,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._append(f"debug 失败: {exc}")
+                return
             if completed.stdout:
                 self._append(completed.stdout.strip())
             if completed.stderr:
                 self._append(completed.stderr.strip())
+            if not completed.stdout and not completed.stderr:
+                self._append("(debug 没有输出)")
             self._append(
                 "检查结束。" if completed.returncode == 0 else f"debug 退出码 {completed.returncode}"
             )
@@ -237,12 +251,13 @@ class LauncherApp:
             self._append("准备启动官方 worker…")
             info = prepare_session(ws, name, key, https_proxy=proxy, log=self._append)
             self._append("命令: " + str(info["display"]))
-            for line in probe_worker_hosts(proxy):
+            session = probe_session(proxy)
+            for line in session["lines"]:
                 self._append(line)
             self.root.after(0, lambda: self.status.set(f"运行中 · {info['worker_name']}"))
             self.root.after(0, lambda: self.btn_start.state(["disabled"]))
             self.root.after(0, lambda: self.btn_stop.state(["!disabled"]))
-            self.worker.start(info["command"], self._append, env=info["env"])
+            self.worker.start(info["command"], self._append, env=session["env"])
             self._busy = False
             self.worker.pump_output(self._append)
             code = self.worker.proc.returncode if self.worker.proc else None

@@ -16,6 +16,8 @@ from workstation.network import (
     ensure_http1_for_agent,
     explain_tls_failure,
     looks_like_tls_failure,
+    normalize_proxy,
+    probe_session,
     probe_url,
     probe_worker_hosts,
     worker_child_env,
@@ -51,6 +53,47 @@ class ProxyEnvTests(unittest.TestCase):
         with patch.dict(os.environ, {"HTTPS_PROXY": "http://env:1"}, clear=False):
             self.assertEqual(configured_proxy("http://gui:7890"), "http://gui:7890")
             self.assertEqual(configured_proxy(""), "http://env:1")
+
+    def test_normalize_strips_trailing_slash(self) -> None:
+        self.assertEqual(normalize_proxy("http://172.18.110.88:8080/"), "http://172.18.110.88:8080")
+
+    def test_http_proxy_only_gets_https_and_node_flag(self) -> None:
+        env_vars = {
+            "HTTP_PROXY": "http://172.18.110.88:8080/",
+            "http_proxy": "http://172.18.110.88:8080/",
+            "HTTPS_PROXY": "",
+            "https_proxy": "",
+            "ALL_PROXY": "",
+            "all_proxy": "",
+            "NODE_USE_ENV_PROXY": "",
+        }
+        with patch.dict(os.environ, env_vars, clear=False):
+            env = worker_child_env("", prefer_direct=False)
+        self.assertEqual(env["HTTPS_PROXY"], "http://172.18.110.88:8080")
+        self.assertEqual(env["HTTP_PROXY"], "http://172.18.110.88:8080")
+        self.assertEqual(env["NODE_USE_ENV_PROXY"], "1")
+
+    def test_prefer_direct_drops_inherited_http_proxy(self) -> None:
+        env_vars = {
+            "HTTP_PROXY": "http://172.18.110.88:8080/",
+            "http_proxy": "http://172.18.110.88:8080/",
+            "HTTPS_PROXY": "",
+            "https_proxy": "",
+            "ALL_PROXY": "",
+            "all_proxy": "",
+            "NODE_USE_ENV_PROXY": "",
+        }
+        with patch.dict(os.environ, env_vars, clear=False):
+            env = worker_child_env("", prefer_direct=True)
+        self.assertFalse(env.get("HTTP_PROXY"))
+        self.assertFalse(env.get("HTTPS_PROXY"))
+        self.assertFalse(env.get("NODE_USE_ENV_PROXY"))
+
+    def test_explicit_proxy_wins_over_prefer_direct(self) -> None:
+        with patch.dict(os.environ, {"HTTP_PROXY": "http://env:8080"}, clear=False):
+            env = worker_child_env("http://127.0.0.1:7890/", prefer_direct=True)
+        self.assertEqual(env["HTTPS_PROXY"], "http://127.0.0.1:7890")
+        self.assertEqual(env["NODE_USE_ENV_PROXY"], "1")
 
 
 class CliConfigTests(unittest.TestCase):
@@ -100,6 +143,27 @@ class ProbeTests(unittest.TestCase):
             lines = probe_worker_hosts("")
         self.assertTrue(any("直连" in line for line in lines))
         self.assertTrue(any("未设置代理" in line for line in lines))
+
+    def test_probe_session_direct_ok_ignores_http_only_proxy(self) -> None:
+        env_vars = {
+            "HTTP_PROXY": "http://172.18.110.88:8080/",
+            "http_proxy": "http://172.18.110.88:8080/",
+            "HTTPS_PROXY": "",
+            "https_proxy": "",
+            "ALL_PROXY": "",
+            "all_proxy": "",
+            "NODE_USE_ENV_PROXY": "",
+        }
+        with (
+            patch.dict(os.environ, env_vars, clear=False),
+            patch("workstation.network.probe_url", return_value="OK HTTP 200"),
+        ):
+            session = probe_session("")
+        self.assertTrue(session["prefer_direct"])
+        self.assertFalse(session["env"].get("HTTP_PROXY"))
+        self.assertTrue(any("忽略系统代理" in line for line in session["lines"]))
+        self.assertTrue(any("没有 HTTPS_PROXY" in line for line in session["lines"]))
+        self.assertTrue(any("worker 进程环境" in line for line in session["lines"]))
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from workstation.launcher import prepare_session
+from workstation.network import probe_session
 
 
 def _print(msg: str = "") -> None:
@@ -45,8 +46,11 @@ def run_start() -> int:
     _print("请保持本窗口不要关闭。然后打开 https://cursor.com/agents")
     _print("命令: " + str(info["display"]))
     _print()
+    session = probe_session(str(cfg.get("https_proxy") or ""))
+    for line in session["lines"]:
+        _print(line)
     try:
-        completed = subprocess.run(info["command"], env=info["env"])
+        completed = subprocess.run(info["command"], env=session["env"])
         return int(completed.returncode)
     except KeyboardInterrupt:
         _print("\n已停止 worker")

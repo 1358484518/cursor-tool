@@ -211,7 +211,9 @@ agent worker start --name 你的工位名 --worker-dir 你的工作文件夹
 
 ## 排查
 
-- **启动时报 `EPROTO` / `packet length too long` / Failed to validate worker account settings**：TLS 被中间设备打断，配置本身没问题。点窗口里的 **检查网络**；给 worker 配 HTTP 代理（`http://127.0.0.1:7890` 一类，不要写成 `https://`）；从终端启动以便带上环境变量：
+- **启动时报 `EPROTO` / `packet length too long` / Failed to validate worker account settings**：TLS 被中间设备打断，配置本身没问题。先点 **检查网络**。
+  - 若直连 `api2.cursor.sh` 已是 OK，但系统只有 `HTTP_PROXY`、没有 `HTTPS_PROXY`：窗口代理**留空**再启动。本工具会让 worker 直连，避免 Node 把 TLS 打到公司 HTTP 代理上。
+  - 直连失败时，再填 **HTTPS 代理**（`http://host:port`，不要 `https://`，末尾不要 `/`），或：
   ```bash
   export HTTPS_PROXY=http://127.0.0.1:7890
   export HTTP_PROXY="$HTTPS_PROXY"
