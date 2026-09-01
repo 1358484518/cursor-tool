@@ -9,7 +9,13 @@ from pathlib import Path
 
 from workstation import fs_tools
 from workstation.mcp_config import mcp_server_config
-from workstation.mcp_server import _read_message, _write_message, handle_request
+from workstation.mcp_server import (
+    SERVER_INSTRUCTIONS,
+    TOOLS,
+    _read_message,
+    _write_message,
+    handle_request,
+)
 from workstation.sandbox import PathDeniedError
 
 
@@ -62,6 +68,8 @@ class McpProtocolTests(unittest.TestCase):
     def test_initialize_and_list_tools(self) -> None:
         init = handle_request("initialize", {"protocolVersion": "2024-11-05"})
         self.assertEqual(init["serverInfo"]["name"], "windows-workstation")
+        self.assertIn("用途", init["instructions"])
+        self.assertIn("编译", init["instructions"])
         tools = handle_request("tools/list", {})
         names = {t["name"] for t in tools["tools"]}
         self.assertEqual(
@@ -76,6 +84,27 @@ class McpProtocolTests(unittest.TestCase):
                 "take_photo",
             },
         )
+
+    def test_tool_descriptions_state_purpose(self) -> None:
+        """每个工具说明必须写出「用于…」，方便云端 Agent 判断何时调用。"""
+        self.assertIn("嵌入式", SERVER_INSTRUCTIONS)
+        self.assertIn("典型流程", SERVER_INSTRUCTIONS)
+        listed = handle_request("tools/list", {})
+        by_name = {item["name"]: item["description"] for item in listed["tools"]}
+        self.assertEqual(set(by_name), {item["name"] for item in TOOLS})
+        expected_use = {
+            "list_dir": "工程结构",
+            "read_file": "源码",
+            "write_file": "改源码",
+            "run_command": "编译",
+            "serial_list": "COM",
+            "serial_send": "日志",
+            "take_photo": "LED",
+        }
+        for name, hint in expected_use.items():
+            desc = by_name[name]
+            self.assertIn("用于", desc, msg=f"{name} 缺少用途说明")
+            self.assertIn(hint, desc, msg=f"{name} 用途说明未覆盖「{hint}」")
 
     def test_read_and_denied_via_mcp(self) -> None:
         ok = handle_request("tools/call", {"name": "read_file", "arguments": {"path": "a.txt"}})

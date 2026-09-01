@@ -8,6 +8,9 @@ echo.
 echo ========================================
 echo   Cursor Windows 工位一键配置
 echo ========================================
+echo 作用：把这台电脑连到 Cursor Cloud Agent。
+echo 云端任务只能读写你指定的一个文件夹，
+echo 并可调用本机编译器、烧录器、串口和摄像头。
 echo.
 
 call :find_python

@@ -54,6 +54,7 @@ def run_start() -> int:
     _print("========================================")
     _print(f"工位名:   {worker_name}")
     _print(f"工作区:   {workspace}")
+    _print("用途: 云端 Agent 在本文件夹改代码、编译烧录、看串口、拍照。")
     _print("请保持本窗口不要关闭。")
     _print("然后打开 https://cursor.com/agents ，在环境列表里选择这台机器。")
     _print()

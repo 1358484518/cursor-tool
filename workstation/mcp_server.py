@@ -1,5 +1,8 @@
 """MCP stdio 服务：列目录、读写工作区、跑命令、串口、拍照。
 
+用途：让云端 Cursor Agent 在 Windows 工位上操作嵌入式/固件工程——
+读写指定文件夹、调用本机编译器/烧录器、串口调试、摄像头核对硬件。
+
 协议使用 LSP 风格的 Content-Length 帧，供 Cursor worker / 编辑器以 command 方式拉起。
 文件类工具全部经过 sandbox，无法读写用户指定文件夹以外的路径。
 跑命令时工作目录锁定在该文件夹，系统 PATH 上的编译器、烧录器可以调用。
@@ -19,6 +22,18 @@ from workstation.sandbox import PathDeniedError, normalize_root, resolve_in_root
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "windows-workstation"
 SERVER_VERSION = "1.0.0"
+
+SERVER_INSTRUCTIONS = (
+    "这是 Windows 工位 MCP（windows-workstation）。"
+    "用途：让云端 Cursor Agent 在用户本机操作嵌入式/固件工程——"
+    "读写用户指定的唯一工作文件夹、调用本机已安装的编译器与烧录器、"
+    "用串口看日志/发命令、用摄像头核对板子现象。"
+    "文件工具只能访问该工作文件夹（拦截 .. 与符号链接逃逸）。"
+    "run_command 的 cwd 必须在工作区内，可执行文件走系统 PATH"
+    "（Keil、IAR、arm-none-eabi-gcc、STM32CubeProgrammer、J-Link 等）。"
+    "典型流程：list_dir 摸清工程 → read_file/write_file 看改代码 → "
+    "run_command 编译烧录 → serial_list/serial_send 看串口 → take_photo 核对硬件。"
+)
 
 
 def _kit_root() -> Path:
@@ -147,38 +162,69 @@ TOOL_IMPL: dict[str, ToolFn] = {
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_dir",
-        "description": "列出用户指定工作文件夹内的目录。path 相对工作区根目录，禁止访问其外的路径。",
+        "description": (
+            "列出用户指定工作文件夹内的目录。"
+            "用于：摸清工程结构、找到源码/工程文件（.uvprojx、Makefile、CMakeLists.txt）、"
+            "定位 hex/bin/map 编译产物。"
+            "path 相对工作区根目录，禁止访问其外的路径。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "相对工作区的目录，默认 ."},
-                "max_entries": {"type": "integer", "description": "最多返回多少项，默认 500"},
+                "path": {
+                    "type": "string",
+                    "description": "相对工作区的目录，默认 .（工作区根）",
+                },
+                "max_entries": {
+                    "type": "integer",
+                    "description": "最多返回多少项，默认 500",
+                },
             },
         },
     },
     {
         "name": "read_file",
-        "description": "读取工作文件夹内的文件。encoding 用 utf-8；二进制可设为 hex。",
+        "description": (
+            "读取工作文件夹内的文件。"
+            "用于：查看源码、链接脚本、编译日志、map 文件、配置或烧录脚本。"
+            "encoding 默认 utf-8；固件/二进制请设 encoding=hex。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string"},
-                "encoding": {"type": "string", "description": "utf-8 或 hex"},
-                "max_bytes": {"type": "integer"},
+                "path": {"type": "string", "description": "相对工作区的文件路径"},
+                "encoding": {
+                    "type": "string",
+                    "description": "utf-8（默认，文本）或 hex（二进制）",
+                },
+                "max_bytes": {
+                    "type": "integer",
+                    "description": "最多读取字节数，默认 2MiB",
+                },
             },
             "required": ["path"],
         },
     },
     {
         "name": "write_file",
-        "description": "写入工作文件夹内的文件。不能写到工作区以外。",
+        "description": (
+            "写入工作文件夹内的文件。"
+            "用于：改源码、打补丁、生成编译/烧录脚本、保存日志或 hex 数据。"
+            "不能写到工作区以外。encoding=hex 可写二进制；append=true 则追加。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-                "encoding": {"type": "string", "description": "utf-8 或 hex"},
-                "append": {"type": "boolean"},
+                "path": {"type": "string", "description": "相对工作区的文件路径"},
+                "content": {"type": "string", "description": "要写入的文本，或 hex 字符串"},
+                "encoding": {
+                    "type": "string",
+                    "description": "utf-8（默认，文本）或 hex（二进制）",
+                },
+                "append": {
+                    "type": "boolean",
+                    "description": "true 则追加，默认覆盖",
+                },
             },
             "required": ["path"],
         },
@@ -186,49 +232,91 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "run_command",
         "description": (
-            "在工作文件夹内执行命令。cwd 必须位于工作区内。"
-            "可以调用系统里已安装的编译器、烧录器（通过 PATH），"
-            "但不要用命令去读写工作区以外的工程文件。"
+            "在工作文件夹内执行命令。"
+            "用于：编译固件（arm-none-eabi-gcc、Keil UV4、IAR）、"
+            "烧录（STM32_Programmer_CLI、JLink.exe）、跑测试、查看工具链版本。"
+            "cwd 必须位于工作区内；可执行文件走系统 PATH。"
+            "不要用命令去读写工作区以外的工程文件。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "例如 arm-none-eabi-gcc --version 或 STM32_Programmer_CLI -l"},
-                "cwd": {"type": "string", "description": "相对工作区的工作目录，默认 ."},
-                "timeout": {"type": "integer", "description": "超时秒数，默认 120，最大 3600"},
+                "command": {
+                    "type": "string",
+                    "description": (
+                        "例如 arm-none-eabi-gcc --version、"
+                        "STM32_Programmer_CLI -l、JLink.exe"
+                    ),
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "相对工作区的工作目录，默认 .",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "超时秒数，默认 120，最大 3600",
+                },
             },
             "required": ["command"],
         },
     },
     {
         "name": "serial_list",
-        "description": "列出本机串口（COM3、COM4 等），用于烧录或日志。",
+        "description": (
+            "列出本机串口（COM3、COM4 等）。"
+            "用于：确认开发板对应哪个口、排查串口助手占用、给 serial_send 选择 port。"
+            "串口是本机硬件，不走文件沙箱。"
+        ),
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "serial_send",
-        "description": "向串口发送数据并读取应答。data 默认按 utf-8；encoding=hex 时按十六进制发送。",
+        "description": (
+            "向串口发送数据并读取应答（默认 8N1）。"
+            "用于：MCU 调试日志、AT 命令、bootloader 交互、确认烧录后设备是否起来。"
+            "data 默认按 utf-8；encoding=hex 时按十六进制发二进制帧。"
+            "先用 serial_list 确认 port。不传 data 则只读。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "port": {"type": "string", "description": "例如 COM3"},
                 "baudrate": {"type": "integer", "description": "默认 115200"},
-                "data": {"type": "string"},
-                "encoding": {"type": "string", "description": "utf-8 或 hex"},
+                "data": {
+                    "type": "string",
+                    "description": "要发送的内容；留空则只读取",
+                },
+                "encoding": {
+                    "type": "string",
+                    "description": "utf-8（默认）或 hex",
+                },
                 "read_timeout": {"type": "number", "description": "秒，默认 1"},
-                "bytes_to_read": {"type": "integer", "description": "最多读多少字节，默认 1024"},
+                "bytes_to_read": {
+                    "type": "integer",
+                    "description": "最多读多少字节，默认 1024",
+                },
             },
             "required": ["port"],
         },
     },
     {
         "name": "take_photo",
-        "description": "用本机摄像头拍一张照片，保存到工作文件夹内（默认 capture.jpg）。",
+        "description": (
+            "用本机摄像头拍一张照片，保存到工作文件夹内（默认 capture.jpg）。"
+            "用于：核对 LED/屏幕/接线等硬件现象、烧录后目视确认、"
+            "把现场照片交给云端 Agent 分析。需要已连接摄像头。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "相对工作区的保存路径，默认 capture.jpg"},
-                "camera_index": {"type": "integer", "description": "摄像头编号，默认 0"},
+                "path": {
+                    "type": "string",
+                    "description": "相对工作区的保存路径，默认 capture.jpg",
+                },
+                "camera_index": {
+                    "type": "integer",
+                    "description": "摄像头编号，默认 0",
+                },
             },
         },
     },
@@ -243,11 +331,7 @@ def handle_request(method: str, params: dict[str, Any] | None) -> Any:
             "protocolVersion": client_version or PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-            "instructions": (
-                "这是 Windows 工位 MCP。文件只能读写用户指定的一个工作文件夹；"
-                "编译器、烧录器可通过 run_command 从系统 PATH 调用；"
-                "串口与拍照走 serial_* / take_photo。"
-            ),
+            "instructions": SERVER_INSTRUCTIONS,
         }
     if method == "ping":
         return {}
