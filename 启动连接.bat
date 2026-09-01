@@ -8,6 +8,8 @@ echo.
 echo ========================================
 echo   启动 Cursor worker 连接
 echo ========================================
+echo 作用：运行官方 agent worker start，保持与 Cloud Agent 的连接。
+echo 本机工作区里改代码、编译烧录；串口和拍照走 MCP。
 echo 请保持本窗口开启。关闭后云端将无法使用这台工位。
 echo.
 

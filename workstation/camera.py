@@ -1,4 +1,8 @@
-"""摄像头拍照。照片必须保存到工作区内。"""
+"""摄像头拍照。对齐 videocapture-mcp 的 quick_capture：打开 → 拍一帧 → 关闭。
+
+参考：https://github.com/13rac1/videocapture-mcp
+照片必须保存到 worker 工作区内（官方 filesystem MCP 同样限制 allowed directories）。
+"""
 
 from __future__ import annotations
 

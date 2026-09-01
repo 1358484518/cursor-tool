@@ -28,7 +28,7 @@ def _prompt(message: str, default: str = "") -> str:
 
 def _ensure_python_packages() -> None:
     req = KIT_DIR / "requirements.txt"
-    _print("正在安装 Python 依赖（pyserial、opencv-python）…")
+    _print("正在安装 Python 依赖（官方 mcp SDK、pyserial、opencv-python）…")
     cmd = [sys.executable, "-m", "pip", "install", "-r", str(req)]
     result = subprocess.run(cmd)
     if result.returncode != 0:
@@ -41,8 +41,9 @@ def _ensure_python_packages() -> None:
 
 def _ask_workspace() -> Path:
     _print()
-    _print("请指定本机唯一允许读写的工作文件夹。")
-    _print("云端 Agent 只能通过 MCP 读写这个文件夹；系统里的编译器、烧录器仍可调用。")
+    _print("请指定 Cursor worker 的工作文件夹（官方参数 --worker-dir）。")
+    _print("云端 Agent 的文件编辑和终端命令会在这个目录进行；本机编译器、烧录器走系统 PATH。")
+    _print("串口和摄像头由本套件的 MCP 提供（文件读写不再重复造轮子）。")
     raw = _prompt("工作文件夹完整路径", str(Path.home() / "CursorWork"))
     path = Path(raw).expanduser()
     if not path.is_absolute():
@@ -132,7 +133,13 @@ def run_setup() -> int:
     _print("配置完成。")
     _print(f"  工作区: {workspace}")
     _print(f"  工位名: {worker_name}")
-    _print("  MCP:    list_dir / read_file / write_file / run_command / serial_list / serial_send / take_photo")
+    _print("  文件 / 编译 / 烧录: Cursor worker 自带（--worker-dir + 系统 PATH）")
+    _print("  硬件 MCP（官方 FastMCP，对齐 mcp-serial / videocapture-mcp）:")
+    _print("    list_ports     列出 COM 口和 USB VID/PID")
+    _print("    query          串口收发；AT / 日志 / expect 等到应答")
+    _print("    serial_write   只发不等待（含 hex 帧）")
+    _print("    reset_device   脉冲 DTR 复位并抓 boot log")
+    _print("    take_photo     拍板子，把图像直接返回给 Agent")
     _print()
     start_now = _prompt("现在启动连接，让云端 Agent 连到这台 Windows 工位？ (Y/n)", "Y")
     if start_now.lower() in {"y", "yes", "是", ""}:

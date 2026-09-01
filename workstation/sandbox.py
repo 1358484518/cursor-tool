@@ -1,4 +1,9 @@
-"""把文件读写限制在用户指定的一个工作文件夹内。"""
+"""把路径限制在用户指定的一个工作文件夹内。
+
+做法对齐官方 MCP filesystem server（realpath + 禁止逃出 allowed directory）：
+https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
+当前主要用于拍照保存路径；文件编辑本身由 Cursor worker 的 --worker-dir 负责。
+"""
 
 from __future__ import annotations
 
