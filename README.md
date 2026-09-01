@@ -1,4 +1,6 @@
-# Cusor-tool：Windows 工位一键配置
+# Cursor-tool：Windows 工位一键配置
+
+仓库：https://github.com/1358484518/cursor-tool
 
 在 Windows 电脑上双击 **`一键配置.bat`**，即可把这台机器连到 Cursor Cloud Agent（My Machines / worker）。之后云端任务会在你的工位上执行：读写你指定的**一个文件夹**，并可以调用系统里已经装好的编译器、烧录器。
 
@@ -60,7 +62,7 @@ Python 无法像操作系统沙箱那样拦截子进程自己去打开别的磁�
 ## 目录结构
 
 ```
-Cusor-tool/
+cursor-tool/
   一键配置.bat          首次安装、选文件夹、登录、可选立即连接
   启动连接.bat          以后每次连 worker
   requirements.txt      pyserial、opencv-python
